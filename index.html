@@ -1,586 +1,522 @@
-import React, { useState, useEffect } from 'react';
-import { Calendar, UserPlus, AlertCircle, CheckCircle, Clock, Download, Briefcase, CalendarDays, Trash2, Edit2, Plus, X, Info } from 'lucide-react';
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>besmart. - Gestor de Férias</title>
+  
+  <!-- Tailwind CSS para o visual -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  
+  <!-- React e ReactDOM -->
+  <script src="https://unpkg.com/react@18/umd/react.production.min.js" crossorigin></script>
+  <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js" crossorigin></script>
+  
+  <!-- Babel para traduzir o código React no navegador -->
+  <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
 
-export default function App() {
-  const [employees, setEmployees] = useState([]);
-  const [isPptxLoaded, setIsPptxLoaded] = useState(false);
+</head>
+<body>
+  <!-- Onde o app será renderizado -->
+  <div id="root"></div>
 
-  // Form State
-  const initialFormState = {
-    id: null,
-    name: '',
-    role: '',
-    department: 'Operacional',
-    admissionDate: '',
-    hasTakenVacation: false,
-    lastVacationEnd: '',
-    plannedPeriods: [{ start: '', end: '' }]
-  };
-  const [formData, setFormData] = useState(initialFormState);
+  <!-- Lógica da Aplicação -->
+  <script type="text/babel">
+    const { useState, useEffect } = React;
 
-  // Load PptxGenJS dynamically to ensure it works without npm installs
-  useEffect(() => {
-    const loadScript = (src) => {
-      return new Promise((resolve, reject) => {
-        const script = document.createElement('script');
-        script.src = src;
-        script.onload = resolve;
-        script.onerror = reject;
-        document.head.appendChild(script);
-      });
-    };
-
-    const initPptx = async () => {
-      try {
-        if (!window.JSZip) await loadScript('https://cdn.jsdelivr.net/gh/gitbrent/pptxgenjs@3.12.0/libs/jszip.min.js');
-        if (!window.PptxGenJS) await loadScript('https://cdn.jsdelivr.net/gh/gitbrent/pptxgenjs@3.12.0/dist/pptxgen.min.js');
-        setIsPptxLoaded(true);
-      } catch (error) {
-        console.error("Erro ao carregar a biblioteca PPTX", error);
-      }
-    };
-
-    initPptx();
-
-    // Load saved data from localStorage
-    const saved = localStorage.getItem('besmart_vacations');
-    if (saved) {
-      setEmployees(JSON.parse(saved));
-    }
-  }, []);
-
-  // Save to localStorage whenever employees change
-  useEffect(() => {
-    localStorage.setItem('besmart_vacations', JSON.stringify(employees));
-  }, [employees]);
-
-  // CLT Logic: Calculate deadline
-  const calculateDeadline = (admissionDate, lastVacationEnd) => {
-    const adm = new Date(admissionDate + 'T12:00:00Z'); // Fix timezone issues
-    let nextFinishDeadline = new Date(adm.getFullYear() + 2, adm.getMonth(), adm.getDate());
-
-    if (lastVacationEnd) {
-      const last = new Date(lastVacationEnd + 'T12:00:00Z');
-      // Encontra o próximo prazo que seja razoavelmente depois das últimas férias
-      while (nextFinishDeadline.getTime() <= last.getTime() + (180 * 24 * 60 * 60 * 1000)) {
-        nextFinishDeadline.setFullYear(nextFinishDeadline.getFullYear() + 1);
-      }
-    }
-
-    // A data limite para INICIAR as férias (assumindo 30 dias)
-    const nextStartDeadline = new Date(nextFinishDeadline);
-    nextStartDeadline.setDate(nextStartDeadline.getDate() - 30);
-
-    return {
-      startDeadline: nextStartDeadline,
-      finishDeadline: nextFinishDeadline
-    };
-  };
-
-  const calculateDays = (startStr, endStr) => {
-    if (!startStr || !endStr) return 0;
-    const start = new Date(startStr + 'T12:00:00Z');
-    const end = new Date(endStr + 'T12:00:00Z');
-    const diffTime = end.getTime() - start.getTime();
-    return Math.ceil(diffTime / (1000 * 60 * 60 * 24)) + 1; // +1 para incluir o dia de início e fim
-  };
-
-  const getStatus = (deadlineDate) => {
-    const today = new Date();
-    const diffTime = deadlineDate.getTime() - today.getTime();
-    const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
-
-    if (diffDays < 0) return { label: 'Atrasado', color: 'text-red-600', bg: 'bg-red-100', icon: AlertCircle };
-    if (diffDays <= 90) return { label: 'Atenção (Vence em breve)', color: 'text-orange-600', bg: 'bg-orange-100', icon: Clock };
-    return { label: 'Em dia', color: 'text-emerald-600', bg: 'bg-emerald-100', icon: CheckCircle };
-  };
-
-  const handleInputChange = (e) => {
-    const { name, value, type, checked } = e.target;
-    setFormData({
-      ...formData,
-      [name]: type === 'checkbox' ? checked : value
-    });
-  };
-
-  const handlePeriodChange = (index, field, value) => {
-    const newPeriods = [...formData.plannedPeriods];
-    
-    // Evita a mutação direta criando uma cópia do objeto (Força a atualização visual)
-    newPeriods[index] = { ...newPeriods[index], [field]: value };
-    
-    // Auto-preencher 30 dias sempre que preencher/alterar a data de início e houver apenas 1 período
-    if (field === 'start' && value && formData.plannedPeriods.length === 1) {
-      const startDate = new Date(value + 'T12:00:00Z');
+    // --- Sistema de Ícones Interno ---
+    const Icon = ({ name, className }) => {
+      const paths = {
+        UserPlus: <><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><line x1="19" y1="8" x2="19" y2="14"/><line x1="22" y1="11" x2="16" y2="11"/></>,
+        AlertCircle: <><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></>,
+        CheckCircle: <><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></>,
+        Clock: <><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></>,
+        Download: <><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></>,
+        Briefcase: <><rect x="2" y="7" width="20" height="14" rx="2" ry="2"/><path d="M16 21V5a2 2 0 0 0-2-2h-4a2 2 0 0 0-2 2v16"/></>,
+        CalendarDays: <><rect x="3" y="4" width="18" height="18" rx="2" ry="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/><path d="M8 14h.01"/><path d="M12 14h.01"/><path d="M16 14h.01"/><path d="M8 18h.01"/><path d="M12 18h.01"/><path d="M16 18h.01"/></>,
+        Trash2: <><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/><line x1="10" y1="11" x2="10" y2="17"/><line x1="14" y1="11" x2="14" y2="17"/></>,
+        Edit2: <><path d="M17 3a2.828 2.828 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5L17 3z"/></>,
+        Plus: <><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></>,
+        X: <><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></>,
+        Info: <><circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12.01" y2="8"/></>
+      };
       
-      // Verifica se a data é válida antes de tentar calcular
-      if (!isNaN(startDate.getTime())) {
-        const endDate = new Date(startDate);
-        endDate.setDate(endDate.getDate() + 29); // +29 dias para totalizar exatos 30 dias
-        newPeriods[index].end = endDate.toISOString().split('T')[0];
-      }
-    }
-
-    setFormData({ ...formData, plannedPeriods: newPeriods });
-  };
-
-  const addPeriod = () => {
-    if (formData.plannedPeriods.length < 3) {
-      setFormData({ ...formData, plannedPeriods: [...formData.plannedPeriods, { start: '', end: '' }] });
-    }
-  };
-
-  const removePeriod = (index) => {
-    const newPeriods = formData.plannedPeriods.filter((_, i) => i !== index);
-    setFormData({ ...formData, plannedPeriods: newPeriods });
-  };
-
-  const handleEdit = (emp) => {
-    // Garante compatibilidade com cadastros antigos que só tinham 1 período
-    const periods = emp.plannedPeriods && emp.plannedPeriods.length > 0 
-      ? emp.plannedPeriods 
-      : [{ start: emp.plannedStart || '', end: emp.plannedEnd || '' }];
-
-    setFormData({
-      id: emp.id,
-      name: emp.name || '',
-      role: emp.role || '',
-      department: emp.department || 'Operacional',
-      admissionDate: emp.admissionDate || '',
-      hasTakenVacation: emp.hasTakenVacation || false,
-      lastVacationEnd: emp.lastVacationEnd || '',
-      plannedPeriods: periods
-    });
-  };
-
-  const handleSubmit = (e) => {
-    e.preventDefault();
-    const { startDeadline, finishDeadline } = calculateDeadline(
-      formData.admissionDate,
-      formData.hasTakenVacation ? formData.lastVacationEnd : null
-    );
-
-    const employeeData = {
-      ...(formData.id ? { id: formData.id } : { id: crypto.randomUUID() }),
-      ...formData,
-      deadlineStart: startDeadline.toISOString(),
-      deadlineFinish: finishDeadline.toISOString()
+      return (
+        <svg className={className} xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+          {paths[name]}
+        </svg>
+      );
     };
 
-    if (formData.id) {
-      // Atualizar existente
-      setEmployees(employees.map(emp => emp.id === formData.id ? employeeData : emp));
-    } else {
-      // Adicionar novo
-      setEmployees([...employees, employeeData]);
-    }
-    
-    setFormData(initialFormState);
-  };
+    function App() {
+      const [employees, setEmployees] = useState([]);
+      const [isPptxLoaded, setIsPptxLoaded] = useState(false);
 
-  const removeEmployee = (id) => {
-    setEmployees(employees.filter(emp => emp.id !== id));
-  };
+      // Form State
+      const initialFormState = {
+        id: null,
+        name: '',
+        role: '',
+        department: 'Operacional',
+        admissionDate: '',
+        hasTakenVacation: false,
+        lastVacationEnd: '',
+        plannedPeriods: [{ start: '', end: '' }]
+      };
+      const [formData, setFormData] = useState(initialFormState);
 
-  const exportPPTX = () => {
-    if (!window.PptxGenJS) return alert("Biblioteca PPTX ainda está carregando. Tente novamente em segundos.");
+      // Load PptxGenJS dynamically
+      useEffect(() => {
+        const loadScript = (src) => {
+          return new Promise((resolve, reject) => {
+            const script = document.createElement('script');
+            script.src = src;
+            script.onload = resolve;
+            script.onerror = reject;
+            document.head.appendChild(script);
+          });
+        };
 
-    const pres = new window.PptxGenJS();
-    const slide = pres.addSlide();
+        const initPptx = async () => {
+          try {
+            if (!window.JSZip) await loadScript('https://cdn.jsdelivr.net/gh/gitbrent/pptxgenjs@3.12.0/libs/jszip.min.js');
+            if (!window.PptxGenJS) await loadScript('https://cdn.jsdelivr.net/gh/gitbrent/pptxgenjs@3.12.0/dist/pptxgen.min.js');
+            setIsPptxLoaded(true);
+          } catch (error) {
+            console.error("Erro ao carregar a biblioteca PPTX", error);
+          }
+        };
 
-    // Background & Title
-    slide.background = { color: "F3F4F6" };
-    slide.addShape(pres.ShapeType.rect, { x: 0, y: 0, w: "100%", h: 0.8, fill: { color: "8B5CF6" } });
-    slide.addText("besmart. - Diretoria 2", { x: 0.5, y: 0.1, w: 5, h: 0.6, fontSize: 18, color: "FFFFFF", bold: true });
-    slide.addText("Cronograma de Férias da Equipe", { x: 0.5, y: 1.0, w: 8, fontSize: 22, color: "374151", bold: true });
+        initPptx();
 
-    // Table Data
-    const headers = [
-      { text: "Colaborador", options: { fill: "8B5CF6", color: "FFFFFF", bold: true } },
-      { text: "Função", options: { fill: "8B5CF6", color: "FFFFFF", bold: true } },
-      { text: "Limite Início (CLT)", options: { fill: "8B5CF6", color: "FFFFFF", bold: true } },
-      { text: "Férias Planejadas", options: { fill: "8B5CF6", color: "FFFFFF", bold: true } }
-    ];
+        // Load saved data
+        const saved = localStorage.getItem('besmart_vacations');
+        if (saved) {
+          setEmployees(JSON.parse(saved));
+        }
+      }, []);
 
-    const rows = employees.map(emp => {
-      const limitStr = new Date(emp.deadlineStart).toLocaleDateString('pt-BR');
-      
-      let plannedStr = "Não planejado";
-      // Compatibilidade com dados antigos vs novos períodos
-      const periods = emp.plannedPeriods || (emp.plannedStart ? [{start: emp.plannedStart, end: emp.plannedEnd}] : []);
-      const validPeriods = periods.filter(p => p.start && p.end);
-      
-      if (validPeriods.length > 0) {
-        plannedStr = validPeriods.map(p => {
-          const days = calculateDays(p.start, p.end);
-          return `${new Date(p.start + 'T12:00:00Z').toLocaleDateString('pt-BR')} a ${new Date(p.end + 'T12:00:00Z').toLocaleDateString('pt-BR')} (${days} dias)`;
-        }).join('\n');
-      }
+      // Save to localStorage
+      useEffect(() => {
+        localStorage.setItem('besmart_vacations', JSON.stringify(employees));
+      }, [employees]);
 
-      return [emp.name, `${emp.role} (${emp.department || 'Op.'})`, limitStr, plannedStr];
-    });
+      const calculateDeadline = (admissionDate, lastVacationEnd) => {
+        const adm = new Date(admissionDate + 'T12:00:00Z');
+        let nextFinishDeadline = new Date(adm.getFullYear() + 2, adm.getMonth(), adm.getDate());
 
-    slide.addTable([headers, ...rows], {
-      x: 0.5, y: 1.8, w: 9, 
-      colW: [2.5, 2.5, 2.0, 2.0],
-      border: { pt: 1, color: "E5E7EB" },
-      fill: "FFFFFF",
-      fontSize: 12
-    });
+        if (lastVacationEnd) {
+          const last = new Date(lastVacationEnd + 'T12:00:00Z');
+          while (nextFinishDeadline.getTime() <= last.getTime() + (180 * 24 * 60 * 60 * 1000)) {
+            nextFinishDeadline.setFullYear(nextFinishDeadline.getFullYear() + 1);
+          }
+        }
 
-    // --- Slide 2: Gantt Chart (Cronograma Visual) ---
-    const slide2 = pres.addSlide();
-    slide2.background = { color: "F3F4F6" };
-    slide2.addShape(pres.ShapeType.rect, { x: 0, y: 0, w: "100%", h: 0.8, fill: { color: "8B5CF6" } });
-    slide2.addText("besmart. - Diretoria 2", { x: 0.5, y: 0.1, w: 5, h: 0.6, fontSize: 18, color: "FFFFFF", bold: true });
-    slide2.addText("Visualização do Cronograma", { x: 0.5, y: 1.0, w: 8, fontSize: 22, color: "374151", bold: true });
+        const nextStartDeadline = new Date(nextFinishDeadline);
+        nextStartDeadline.setDate(nextStartDeadline.getDate() - 30);
 
-    const monthsLabels = ['Jan', 'Fev', 'Mar', 'Abr', 'Mai', 'Jun', 'Jul', 'Ago', 'Set', 'Out', 'Nov', 'Dez'];
-    const timelineHeaders = [
-      { text: "Colaborador", options: { fill: "8B5CF6", color: "FFFFFF", bold: true } },
-      ...monthsLabels.map(m => ({ text: m, options: { fill: "8B5CF6", color: "FFFFFF", bold: true, align: "center" } }))
-    ];
+        return { startDeadline: nextStartDeadline, finishDeadline: nextFinishDeadline };
+      };
 
-    const timelineRows = employees.map(emp => {
-      const row = [{ text: emp.name, options: { bold: true, fill: "FFFFFF" } }];
-      monthsLabels.forEach((_, monthIndex) => {
-         const hasVac = checkOverlap(monthIndex, emp.plannedPeriods, emp.plannedStart, emp.plannedEnd);
-         if (hasVac) {
-           row.push({ text: "", options: { fill: "C4B5FD" } }); // Roxo claro (férias marcadas)
-         } else {
-           row.push({ text: "", options: { fill: "FFFFFF" } });
-         }
-      });
-      return row;
-    });
+      const calculateDays = (startStr, endStr) => {
+        if (!startStr || !endStr) return 0;
+        const start = new Date(startStr + 'T12:00:00Z');
+        const end = new Date(endStr + 'T12:00:00Z');
+        const diffTime = end.getTime() - start.getTime();
+        return Math.ceil(diffTime / (1000 * 60 * 60 * 24)) + 1;
+      };
 
-    slide2.addTable([timelineHeaders, ...timelineRows], {
-      x: 0.5, y: 1.8, w: 9,
-      colW: [2.2, ...Array(12).fill(0.56)],
-      border: { pt: 1, color: "E5E7EB" },
-      fontSize: 10
-    });
+      const getStatus = (deadlineDate) => {
+        const today = new Date();
+        const diffTime = deadlineDate.getTime() - today.getTime();
+        const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
 
-    pres.writeFile({ fileName: "Besmart_Cronograma_Ferias_D2.pptx" });
-  };
+        if (diffDays < 0) return { label: 'Atrasado', color: 'text-red-600', bg: 'bg-red-100', iconName: 'AlertCircle' };
+        if (diffDays <= 90) return { label: 'Atenção (Vence em breve)', color: 'text-orange-600', bg: 'bg-orange-100', iconName: 'Clock' };
+        return { label: 'Em dia', color: 'text-emerald-600', bg: 'bg-emerald-100', iconName: 'CheckCircle' };
+      };
 
-  // Timeline (Gantt) variables
-  const currentYear = new Date().getFullYear();
-  const months = ['Jan', 'Fev', 'Mar', 'Abr', 'Mai', 'Jun', 'Jul', 'Ago', 'Set', 'Out', 'Nov', 'Dez'];
+      const handleInputChange = (e) => {
+        const { name, value, type, checked } = e.target;
+        setFormData({ ...formData, [name]: type === 'checkbox' ? checked : value });
+      };
 
-  const checkOverlap = (monthIndex, periods, legacyStart, legacyEnd) => {
-    const checkDates = (startStr, endStr) => {
-      if (!startStr || !endStr) return false;
-      const start = new Date(startStr + 'T12:00:00Z');
-      const end = new Date(endStr + 'T12:00:00Z');
-      const monthStart = new Date(start.getFullYear(), monthIndex, 1);
-      const monthEnd = new Date(start.getFullYear(), monthIndex + 1, 0);
-      return start <= monthEnd && end >= monthStart;
-    };
-
-    // Checa múltiplos períodos
-    if (periods && periods.length > 0) {
-      return periods.some(p => checkDates(p.start, p.end));
-    }
-    
-    // Compatibilidade com dados que já estavam salvos
-    return checkDates(legacyStart, legacyEnd);
-  };
-
-  return (
-    <div className="min-h-screen bg-gray-50 font-sans text-gray-800">
-      {/* Header */}
-      <header className="bg-[#8b5cf6] text-white shadow-md">
-        <div className="max-w-7xl mx-auto px-4 py-4 flex justify-between items-center">
-          <div className="flex items-center space-x-2">
-            {/* Logo Replica */}
-            <div className="flex items-center text-3xl font-extrabold tracking-tight">
-              <span>be.</span>
-              <span className="font-medium">smart</span>
-              <div className="ml-2 grid grid-cols-2 gap-0.5">
-                <div className="w-4 h-4 bg-white rounded-tl-full"></div>
-                <div className="w-4 h-4"></div>
-                <div className="w-4 h-4"></div>
-                <div className="w-4 h-4 bg-white rounded-br-full"></div>
-              </div>
-            </div>
-          </div>
-          <h1 className="text-xl font-medium hidden md:block border-l border-white/30 pl-4 ml-4">
-            Gestor de Férias - Diretoria 2
-          </h1>
-        </div>
-      </header>
-
-      <main className="max-w-7xl mx-auto px-4 py-8 space-y-8">
+      const handlePeriodChange = (index, field, value) => {
+        const newPeriods = [...formData.plannedPeriods];
+        newPeriods[index] = { ...newPeriods[index], [field]: value };
         
-        {/* Caixa Informativa - Regras CLT */}
-        <div className="bg-blue-50 border border-blue-200 rounded-xl p-4 flex items-start text-blue-800 shadow-sm">
-          <Info className="w-6 h-6 mr-3 flex-shrink-0 mt-0.5 text-blue-600" />
-          <div className="text-sm">
-            <h3 className="font-bold mb-1 text-base">Regras de Férias (CLT)</h3>
-            <p className="mb-2">
-              O colaborador ganha o direito a férias após 12 meses de trabalho (<strong>Período Aquisitivo</strong>) e deve usufruí-las nos 12 meses seguintes (<strong>Período Concessivo</strong>). 
-            </p>
-            <p className="mb-2 text-blue-900 font-medium">
-              O período MÁXIMO que o colaborador tem para tirar as férias adquiridas é até o término do Período Concessivo (ou seja, o descanso deve ser finalizado antes de se completarem 2 anos do início daquele período aquisitivo correspondente). O atraso gera pagamento em dobro.
-            </p>
-            <p>
-              A legislação permite <strong>fracionar as férias em até 3 períodos</strong>, desde que haja concordância do empregado. Um dos períodos não pode ser inferior a 14 dias corridos e os demais não podem ser inferiores a 5 dias corridos cada. O início das férias não pode ocorrer no período de 2 dias que antecede feriados ou descanso semanal remunerado.
-            </p>
-          </div>
-        </div>
+        if (field === 'start' && value && formData.plannedPeriods.length === 1) {
+          const startDate = new Date(value + 'T12:00:00Z');
+          if (!isNaN(startDate.getTime())) {
+            const endDate = new Date(startDate);
+            endDate.setDate(endDate.getDate() + 29);
+            newPeriods[index].end = endDate.toISOString().split('T')[0];
+          }
+        }
 
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
-          {/* Formulário */}
-          <div className="bg-white p-6 rounded-xl shadow-sm border border-gray-100 lg:col-span-1">
-            <div className="flex justify-between items-center mb-4">
-              <h2 className="text-lg font-bold text-gray-800 flex items-center">
-                <UserPlus className="w-5 h-5 mr-2 text-violet-500" />
-                {formData.id ? 'Editar Colaborador' : 'Adicionar Colaborador'}
-              </h2>
-              {formData.id && (
-                <button type="button" onClick={() => setFormData(initialFormState)} className="text-sm text-violet-600 font-medium hover:text-violet-800 underline">
-                  Cancelar
-                </button>
-              )}
+        setFormData({ ...formData, plannedPeriods: newPeriods });
+      };
+
+      const addPeriod = () => {
+        if (formData.plannedPeriods.length < 3) {
+          setFormData({ ...formData, plannedPeriods: [...formData.plannedPeriods, { start: '', end: '' }] });
+        }
+      };
+
+      const removePeriod = (index) => {
+        const newPeriods = formData.plannedPeriods.filter((_, i) => i !== index);
+        setFormData({ ...formData, plannedPeriods: newPeriods });
+      };
+
+      const handleEdit = (emp) => {
+        const periods = emp.plannedPeriods && emp.plannedPeriods.length > 0 
+          ? emp.plannedPeriods 
+          : [{ start: emp.plannedStart || '', end: emp.plannedEnd || '' }];
+
+        setFormData({
+          id: emp.id,
+          name: emp.name || '',
+          role: emp.role || '',
+          department: emp.department || 'Operacional',
+          admissionDate: emp.admissionDate || '',
+          hasTakenVacation: emp.hasTakenVacation || false,
+          lastVacationEnd: emp.lastVacationEnd || '',
+          plannedPeriods: periods
+        });
+      };
+
+      const handleSubmit = (e) => {
+        e.preventDefault();
+        const { startDeadline, finishDeadline } = calculateDeadline(
+          formData.admissionDate,
+          formData.hasTakenVacation ? formData.lastVacationEnd : null
+        );
+
+        const employeeData = {
+          ...(formData.id ? { id: formData.id } : { id: crypto.randomUUID() }),
+          ...formData,
+          deadlineStart: startDeadline.toISOString(),
+          deadlineFinish: finishDeadline.toISOString()
+        };
+
+        if (formData.id) {
+          setEmployees(employees.map(emp => emp.id === formData.id ? employeeData : emp));
+        } else {
+          setEmployees([...employees, employeeData]);
+        }
+        
+        setFormData(initialFormState);
+      };
+
+      const removeEmployee = (id) => {
+        setEmployees(employees.filter(emp => emp.id !== id));
+      };
+
+      const exportPPTX = () => {
+        if (!window.PptxGenJS) return alert("Biblioteca PPTX ainda está carregando. Tente novamente em segundos.");
+
+        const pres = new window.PptxGenJS();
+        const slide = pres.addSlide();
+
+        // Slide 1
+        slide.background = { color: "F3F4F6" };
+        slide.addShape(pres.ShapeType.rect, { x: 0, y: 0, w: "100%", h: 0.8, fill: { color: "8B5CF6" } });
+        slide.addText("besmart. - Diretoria 2", { x: 0.5, y: 0.1, w: 5, h: 0.6, fontSize: 18, color: "FFFFFF", bold: true });
+        slide.addText("Cronograma de Férias da Equipe", { x: 0.5, y: 1.0, w: 8, fontSize: 22, color: "374151", bold: true });
+
+        const headers = [
+          { text: "Colaborador", options: { fill: "8B5CF6", color: "FFFFFF", bold: true } },
+          { text: "Função", options: { fill: "8B5CF6", color: "FFFFFF", bold: true } },
+          { text: "Limite Início (CLT)", options: { fill: "8B5CF6", color: "FFFFFF", bold: true } },
+          { text: "Férias Planejadas", options: { fill: "8B5CF6", color: "FFFFFF", bold: true } }
+        ];
+
+        const rows = employees.map(emp => {
+          const limitStr = new Date(emp.deadlineStart).toLocaleDateString('pt-BR');
+          let plannedStr = "Não planejado";
+          const periods = emp.plannedPeriods || (emp.plannedStart ? [{start: emp.plannedStart, end: emp.plannedEnd}] : []);
+          const validPeriods = periods.filter(p => p.start && p.end);
+          
+          if (validPeriods.length > 0) {
+            plannedStr = validPeriods.map(p => {
+              const days = calculateDays(p.start, p.end);
+              return `${new Date(p.start + 'T12:00:00Z').toLocaleDateString('pt-BR')} a ${new Date(p.end + 'T12:00:00Z').toLocaleDateString('pt-BR')} (${days} dias)`;
+            }).join('\n');
+          }
+          return [emp.name, `${emp.role} (${emp.department || 'Op.'})`, limitStr, plannedStr];
+        });
+
+        slide.addTable([headers, ...rows], { x: 0.5, y: 1.8, w: 9, colW: [2.5, 2.5, 2.0, 2.0], border: { pt: 1, color: "E5E7EB" }, fill: "FFFFFF", fontSize: 12 });
+
+        // Slide 2: Gantt Chart
+        const slide2 = pres.addSlide();
+        slide2.background = { color: "F3F4F6" };
+        slide2.addShape(pres.ShapeType.rect, { x: 0, y: 0, w: "100%", h: 0.8, fill: { color: "8B5CF6" } });
+        slide2.addText("besmart. - Diretoria 2", { x: 0.5, y: 0.1, w: 5, h: 0.6, fontSize: 18, color: "FFFFFF", bold: true });
+        slide2.addText("Visualização do Cronograma", { x: 0.5, y: 1.0, w: 8, fontSize: 22, color: "374151", bold: true });
+
+        const monthsLabels = ['Jan', 'Fev', 'Mar', 'Abr', 'Mai', 'Jun', 'Jul', 'Ago', 'Set', 'Out', 'Nov', 'Dez'];
+        const timelineHeaders = [
+          { text: "Colaborador", options: { fill: "8B5CF6", color: "FFFFFF", bold: true } },
+          ...monthsLabels.map(m => ({ text: m, options: { fill: "8B5CF6", color: "FFFFFF", bold: true, align: "center" } }))
+        ];
+
+        const timelineRows = employees.map(emp => {
+          const row = [{ text: emp.name, options: { bold: true, fill: "FFFFFF" } }];
+          monthsLabels.forEach((_, monthIndex) => {
+             const hasVac = checkOverlap(monthIndex, emp.plannedPeriods, emp.plannedStart, emp.plannedEnd);
+             if (hasVac) row.push({ text: "", options: { fill: "C4B5FD" } });
+             else row.push({ text: "", options: { fill: "FFFFFF" } });
+          });
+          return row;
+        });
+
+        slide2.addTable([timelineHeaders, ...timelineRows], { x: 0.5, y: 1.8, w: 9, colW: [2.2, ...Array(12).fill(0.56)], border: { pt: 1, color: "E5E7EB" }, fontSize: 10 });
+        pres.writeFile({ fileName: "Besmart_Cronograma_Ferias_D2.pptx" });
+      };
+
+      const months = ['Jan', 'Fev', 'Mar', 'Abr', 'Mai', 'Jun', 'Jul', 'Ago', 'Set', 'Out', 'Nov', 'Dez'];
+      const checkOverlap = (monthIndex, periods, legacyStart, legacyEnd) => {
+        const checkDates = (startStr, endStr) => {
+          if (!startStr || !endStr) return false;
+          const start = new Date(startStr + 'T12:00:00Z');
+          const end = new Date(endStr + 'T12:00:00Z');
+          const monthStart = new Date(start.getFullYear(), monthIndex, 1);
+          const monthEnd = new Date(start.getFullYear(), monthIndex + 1, 0);
+          return start <= monthEnd && end >= monthStart;
+        };
+        if (periods && periods.length > 0) return periods.some(p => checkDates(p.start, p.end));
+        return checkDates(legacyStart, legacyEnd);
+      };
+
+      return (
+        <div className="min-h-screen bg-gray-50 font-sans text-gray-800">
+          <header className="bg-[#8b5cf6] text-white shadow-md">
+            <div className="max-w-7xl mx-auto px-4 py-4 flex justify-between items-center">
+              <div className="flex items-center space-x-2">
+                <div className="flex items-center text-3xl font-extrabold tracking-tight">
+                  <span>be.</span><span className="font-medium">smart</span>
+                  <div className="ml-2 grid grid-cols-2 gap-0.5">
+                    <div className="w-4 h-4 bg-white rounded-tl-full"></div><div className="w-4 h-4"></div>
+                    <div className="w-4 h-4"></div><div className="w-4 h-4 bg-white rounded-br-full"></div>
+                  </div>
+                </div>
+              </div>
+              <h1 className="text-xl font-medium hidden md:block border-l border-white/30 pl-4 ml-4">
+                Gestor de Férias - Diretoria 2
+              </h1>
             </div>
-            <form onSubmit={handleSubmit} className="space-y-4">
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Nome Completo</label>
-                <input required type="text" name="name" value={formData.name} onChange={handleInputChange} 
-                  className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-violet-500" />
-              </div>
-              
-              <div className="grid grid-cols-2 gap-3">
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Função / Cargo</label>
-                  <input required type="text" name="role" value={formData.role} onChange={handleInputChange} 
-                    className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-violet-500" />
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Setor</label>
-                  <select name="department" value={formData.department} onChange={handleInputChange}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-violet-500 bg-white">
-                    <option value="Operacional">Operacional</option>
-                    <option value="Comercial">Comercial</option>
-                  </select>
-                </div>
-              </div>
+          </header>
 
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Data de Admissão</label>
-                <input required type="date" name="admissionDate" value={formData.admissionDate} onChange={handleInputChange} 
-                  className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-violet-500" />
+          <main className="max-w-7xl mx-auto px-4 py-8 space-y-8">
+            <div className="bg-blue-50 border border-blue-200 rounded-xl p-4 flex items-start text-blue-800 shadow-sm">
+              <Icon name="Info" className="w-6 h-6 mr-3 flex-shrink-0 mt-0.5 text-blue-600" />
+              <div className="text-sm">
+                <h3 className="font-bold mb-1 text-base">Regras de Férias (CLT)</h3>
+                <p className="mb-2">O colaborador ganha o direito a férias após 12 meses de trabalho (<strong>Período Aquisitivo</strong>) e deve usufruí-las nos 12 meses seguintes (<strong>Período Concessivo</strong>).</p>
+                <p className="mb-2 text-blue-900 font-medium">O período MÁXIMO que o colaborador tem para tirar as férias adquiridas é até o término do Período Concessivo. O atraso gera pagamento em dobro.</p>
+                <p>A legislação permite <strong>fracionar as férias em até 3 períodos</strong>, desde que haja concordância do empregado. Um dos períodos não pode ser inferior a 14 dias e os demais não podem ser inferiores a 5 dias. O início não pode ocorrer nos 2 dias que antecedem feriados ou descanso semanal remunerado.</p>
               </div>
+            </div>
 
-              <div className="flex items-center py-2">
-                <input type="checkbox" name="hasTakenVacation" id="hasTaken" checked={formData.hasTakenVacation} onChange={handleInputChange}
-                  className="w-4 h-4 text-violet-600 border-gray-300 rounded focus:ring-violet-500" />
-                <label htmlFor="hasTaken" className="ml-2 text-sm text-gray-700">Já tirou férias anteriormente?</label>
-              </div>
-
-              {formData.hasTakenVacation && (
-                <div className="bg-violet-50 p-3 rounded-md border border-violet-100">
-                  <label className="block text-sm font-medium text-violet-800 mb-1">Data Fim das Últimas Férias</label>
-                  <p className="text-xs text-violet-600 mb-2">Necessário para calcular o próximo período aquisitivo.</p>
-                  <input required={formData.hasTakenVacation} type="date" name="lastVacationEnd" value={formData.lastVacationEnd} onChange={handleInputChange} 
-                    className="w-full px-3 py-2 border border-violet-300 rounded-md focus:outline-none focus:ring-2 focus:ring-violet-500 bg-white" />
-                </div>
-              )}
-
-              <hr className="border-gray-200" />
-              
-              <div>
-                <div className="flex justify-between items-center mb-2">
-                  <label className="block text-sm font-bold text-gray-700">Agendar Férias</label>
-                  {formData.plannedPeriods.length < 3 && (
-                    <button type="button" onClick={addPeriod} className="text-xs bg-violet-100 text-violet-700 px-2 py-1 rounded font-medium flex items-center hover:bg-violet-200">
-                      <Plus className="w-3 h-3 mr-1" /> Fracionar
-                    </button>
+            <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
+              <div className="bg-white p-6 rounded-xl shadow-sm border border-gray-100 lg:col-span-1">
+                <div className="flex justify-between items-center mb-4">
+                  <h2 className="text-lg font-bold text-gray-800 flex items-center">
+                    <Icon name="UserPlus" className="w-5 h-5 mr-2 text-violet-500" />
+                    {formData.id ? 'Editar Colaborador' : 'Adicionar Colaborador'}
+                  </h2>
+                  {formData.id && (
+                    <button type="button" onClick={() => setFormData(initialFormState)} className="text-sm text-violet-600 font-medium hover:text-violet-800 underline">Cancelar</button>
                   )}
                 </div>
-                
-                {formData.plannedPeriods.map((period, index) => (
-                  <div key={index} className="grid grid-cols-12 gap-2 mb-2 items-end bg-gray-50 p-2 rounded border border-gray-200 relative">
-                    {formData.plannedPeriods.length > 1 && (
-                      <button type="button" onClick={() => removePeriod(index)} className="absolute -top-2 -right-2 bg-red-100 text-red-600 rounded-full p-1 hover:bg-red-200 border border-red-200 shadow-sm">
-                        <X className="w-3 h-3" />
-                      </button>
-                    )}
-                    <div className="col-span-6">
-                      <label className="block text-xs text-gray-500 mb-1">Início {formData.plannedPeriods.length > 1 && `(Período ${index + 1})`}</label>
-                      <input type="date" value={period.start} onChange={(e) => handlePeriodChange(index, 'start', e.target.value)} 
-                        className="w-full px-2 py-2 text-sm border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-violet-500 bg-white" />
+                <form onSubmit={handleSubmit} className="space-y-4">
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">Nome Completo</label>
+                    <input required type="text" name="name" value={formData.name} onChange={handleInputChange} className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-violet-500" />
+                  </div>
+                  <div className="grid grid-cols-2 gap-3">
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-1">Função / Cargo</label>
+                      <input required type="text" name="role" value={formData.role} onChange={handleInputChange} className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-violet-500" />
                     </div>
-                    <div className="col-span-6">
-                      <label className="block text-xs text-gray-500 mb-1">Fim {formData.plannedPeriods.length > 1 && `(Período ${index + 1})`}</label>
-                      <input type="date" value={period.end} onChange={(e) => handlePeriodChange(index, 'end', e.target.value)} 
-                        className="w-full px-2 py-2 text-sm border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-violet-500 bg-white" />
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-1">Setor</label>
+                      <select name="department" value={formData.department} onChange={handleInputChange} className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-violet-500 bg-white">
+                        <option value="Operacional">Operacional</option>
+                        <option value="Comercial">Comercial</option>
+                      </select>
                     </div>
                   </div>
-                ))}
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">Data de Admissão</label>
+                    <input required type="date" name="admissionDate" value={formData.admissionDate} onChange={handleInputChange} className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-violet-500" />
+                  </div>
+                  <div className="flex items-center py-2">
+                    <input type="checkbox" name="hasTakenVacation" id="hasTaken" checked={formData.hasTakenVacation} onChange={handleInputChange} className="w-4 h-4 text-violet-600 border-gray-300 rounded focus:ring-violet-500" />
+                    <label htmlFor="hasTaken" className="ml-2 text-sm text-gray-700">Já tirou férias anteriormente?</label>
+                  </div>
+                  {formData.hasTakenVacation && (
+                    <div className="bg-violet-50 p-3 rounded-md border border-violet-100">
+                      <label className="block text-sm font-medium text-violet-800 mb-1">Data Fim das Últimas Férias</label>
+                      <input required={formData.hasTakenVacation} type="date" name="lastVacationEnd" value={formData.lastVacationEnd} onChange={handleInputChange} className="w-full px-3 py-2 border border-violet-300 rounded-md focus:outline-none focus:ring-2 focus:ring-violet-500 bg-white" />
+                    </div>
+                  )}
+                  <hr className="border-gray-200" />
+                  <div>
+                    <div className="flex justify-between items-center mb-2">
+                      <label className="block text-sm font-bold text-gray-700">Agendar Férias</label>
+                      {formData.plannedPeriods.length < 3 && (
+                        <button type="button" onClick={addPeriod} className="text-xs bg-violet-100 text-violet-700 px-2 py-1 rounded font-medium flex items-center hover:bg-violet-200">
+                          <Icon name="Plus" className="w-3 h-3 mr-1" /> Fracionar
+                        </button>
+                      )}
+                    </div>
+                    {formData.plannedPeriods.map((period, index) => (
+                      <div key={index} className="grid grid-cols-12 gap-2 mb-2 items-end bg-gray-50 p-2 rounded border border-gray-200 relative">
+                        {formData.plannedPeriods.length > 1 && (
+                          <button type="button" onClick={() => removePeriod(index)} className="absolute -top-2 -right-2 bg-red-100 text-red-600 rounded-full p-1 hover:bg-red-200 border border-red-200 shadow-sm">
+                            <Icon name="X" className="w-3 h-3" />
+                          </button>
+                        )}
+                        <div className="col-span-6">
+                          <label className="block text-xs text-gray-500 mb-1">Início {formData.plannedPeriods.length > 1 && `(${index + 1})`}</label>
+                          <input type="date" value={period.start} onChange={(e) => handlePeriodChange(index, 'start', e.target.value)} className="w-full px-2 py-2 text-sm border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-violet-500 bg-white" />
+                        </div>
+                        <div className="col-span-6">
+                          <label className="block text-xs text-gray-500 mb-1">Fim {formData.plannedPeriods.length > 1 && `(${index + 1})`}</label>
+                          <input type="date" value={period.end} onChange={(e) => handlePeriodChange(index, 'end', e.target.value)} className="w-full px-2 py-2 text-sm border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-violet-500 bg-white" />
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                  <button type="submit" className="w-full bg-violet-600 hover:bg-violet-700 text-white font-medium py-2.5 px-4 rounded-md transition-colors flex justify-center items-center">
+                    {formData.id ? <><Icon name="Edit2" className="w-4 h-4 mr-2" /> Atualizar Colaborador</> : 'Salvar Colaborador'}
+                  </button>
+                </form>
               </div>
 
-              <button type="submit" className="w-full bg-violet-600 hover:bg-violet-700 text-white font-medium py-2.5 px-4 rounded-md transition-colors flex justify-center items-center">
-                {formData.id ? <><Edit2 className="w-4 h-4 mr-2" /> Atualizar Colaborador</> : 'Salvar Colaborador'}
-              </button>
-            </form>
-          </div>
-
-          {/* Lista e Status */}
-          <div className="bg-white p-6 rounded-xl shadow-sm border border-gray-100 lg:col-span-2 overflow-hidden flex flex-col">
-            <div className="flex justify-between items-center mb-4">
-              <h2 className="text-lg font-bold text-gray-800 flex items-center">
-                <Briefcase className="w-5 h-5 mr-2 text-violet-500" />
-                Equipe & Prazos (CLT)
-              </h2>
-              <span className="bg-violet-100 text-violet-800 text-xs px-2 py-1 rounded-full font-medium">
-                {employees.length} Colaboradores
-              </span>
-            </div>
-
-            <div className="overflow-x-auto flex-1">
-              <table className="w-full text-left border-collapse">
-                <thead>
-                  <tr className="bg-gray-50 text-gray-600 text-sm border-b border-gray-200">
-                    <th className="py-3 px-4 font-medium">Colaborador</th>
-                    <th className="py-3 px-4 font-medium">Admissão</th>
-                    <th className="py-3 px-4 font-medium">Limite Início (30d)</th>
-                    <th className="py-3 px-4 font-medium">Status do Prazo</th>
-                    <th className="py-3 px-4 font-medium">Ações</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-gray-100 text-sm">
-                  {employees.length === 0 ? (
-                    <tr>
-                      <td colSpan="5" className="text-center py-8 text-gray-400">
-                        Nenhum colaborador cadastrado. Adicione ao lado.
-                      </td>
-                    </tr>
-                  ) : (
-                    employees.map((emp) => {
-                      const limitDate = new Date(emp.deadlineStart);
-                      const status = getStatus(limitDate);
-                      const StatusIcon = status.icon;
-
-                      return (
-                        <tr key={emp.id} className="hover:bg-gray-50 transition-colors">
-                          <td className="py-3 px-4">
-                            <div className="font-medium text-gray-900">{emp.name}</div>
-                            <div className="text-xs text-gray-500 flex items-center gap-1 mt-0.5">
-                              <span>{emp.role}</span>
-                              <span className="w-1 h-1 bg-gray-300 rounded-full"></span>
-                              <span className={`font-medium ${emp.department === 'Comercial' ? 'text-blue-600' : 'text-orange-600'}`}>
-                                {emp.department || 'Operacional'}
-                              </span>
-                            </div>
-                          </td>
-                          <td className="py-3 px-4 text-gray-600">
-                            {new Date(emp.admissionDate + 'T12:00:00Z').toLocaleDateString('pt-BR')}
-                          </td>
-                          <td className="py-3 px-4 font-medium text-gray-800">
-                            {limitDate.toLocaleDateString('pt-BR')}
-                          </td>
-                          <td className="py-3 px-4">
-                            <div className="flex items-center space-x-3">
-                              <button onClick={() => handleEdit(emp)} className="text-gray-400 hover:text-blue-600 transition-colors" title="Editar">
-                                <Edit2 className="w-4 h-4" />
-                              </button>
-                              <button onClick={() => removeEmployee(emp.id)} className="text-gray-400 hover:text-red-600 transition-colors" title="Remover">
-                                <Trash2 className="w-4 h-4" />
-                              </button>
-                            </div>
-                          </td>
-                        </tr>
-                      );
-                    })
-                  )}
-                </tbody>
-              </table>
-            </div>
-          </div>
-        </div>
-
-        {/* Cronograma de Férias */}
-        <div className="bg-white p-6 rounded-xl shadow-sm border border-gray-100">
-          <div className="flex flex-col md:flex-row justify-between items-start md:items-center mb-6">
-            <div>
-              <h2 className="text-lg font-bold text-gray-800 flex items-center">
-                <CalendarDays className="w-5 h-5 mr-2 text-violet-500" />
-                Cronograma de Férias
-              </h2>
-              <p className="text-sm text-gray-500">Visualização das férias planejadas ao longo do ano.</p>
-            </div>
-            <button 
-              onClick={exportPPTX}
-              disabled={!isPptxLoaded}
-              className={`mt-4 md:mt-0 flex items-center px-4 py-2 bg-gray-900 hover:bg-gray-800 text-white text-sm font-medium rounded-md transition-colors ${!isPptxLoaded ? 'opacity-50 cursor-not-allowed' : ''}`}
-            >
-              <Download className="w-4 h-4 mr-2" />
-              Gerar Relatório Diretoria 2 (PPTX)
-            </button>
-          </div>
-
-          <div className="overflow-x-auto">
-            <table className="w-full min-w-[800px] border-collapse">
-              <thead>
-                <tr>
-                  <th className="p-2 border border-gray-200 bg-gray-50 text-left text-xs font-medium text-gray-500 uppercase tracking-wider w-48">
-                    Colaborador
-                  </th>
-                  <th className="p-2 border border-gray-200 bg-gray-50 text-left text-xs font-medium text-gray-500 uppercase tracking-wider w-56">
-                    Períodos (Qtd. Dias)
-                  </th>
-                  {months.map(month => (
-                    <th key={month} className="p-2 border border-gray-200 bg-gray-50 text-center text-xs font-medium text-gray-500 uppercase tracking-wider">
-                      {month}
-                    </th>
-                  ))}
-                </tr>
-              </thead>
-              <tbody>
-                {employees.map(emp => (
-                  <tr key={emp.id}>
-                    <td className="p-2 border border-gray-200 text-sm font-medium text-gray-800">
-                      {emp.name}
-                      <div className="text-[10px] text-gray-500 font-normal truncate max-w-[180px]">
-                        {emp.role} • <span className={emp.department === 'Comercial' ? 'text-blue-600' : 'text-orange-600'}>{emp.department || 'Operacional'}</span>
-                      </div>
-                    </td>
-                    <td className="p-2 border border-gray-200 text-xs text-gray-600 bg-gray-50/50">
-                      {(() => {
-                        const periods = emp.plannedPeriods || (emp.plannedStart ? [{start: emp.plannedStart, end: emp.plannedEnd}] : []);
-                        const validPeriods = periods.filter(p => p.start && p.end);
-                        if (validPeriods.length === 0) return <span className="text-gray-400 italic">Não agendado</span>;
-                        
-                        return validPeriods.map((p, i) => {
-                          const days = calculateDays(p.start, p.end);
+              <div className="bg-white p-6 rounded-xl shadow-sm border border-gray-100 lg:col-span-2 overflow-hidden flex flex-col">
+                <div className="flex justify-between items-center mb-4">
+                  <h2 className="text-lg font-bold text-gray-800 flex items-center">
+                    <Icon name="Briefcase" className="w-5 h-5 mr-2 text-violet-500" />
+                    Equipe & Prazos (CLT)
+                  </h2>
+                  <span className="bg-violet-100 text-violet-800 text-xs px-2 py-1 rounded-full font-medium">{employees.length} Colaboradores</span>
+                </div>
+                <div className="overflow-x-auto flex-1">
+                  <table className="w-full text-left border-collapse">
+                    <thead>
+                      <tr className="bg-gray-50 text-gray-600 text-sm border-b border-gray-200">
+                        <th className="py-3 px-4 font-medium">Colaborador</th>
+                        <th className="py-3 px-4 font-medium">Admissão</th>
+                        <th className="py-3 px-4 font-medium">Limite Início (30d)</th>
+                        <th className="py-3 px-4 font-medium">Status do Prazo</th>
+                        <th className="py-3 px-4 font-medium">Ações</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-gray-100 text-sm">
+                      {employees.length === 0 ? (
+                        <tr><td colSpan="5" className="text-center py-8 text-gray-400">Nenhum colaborador cadastrado.</td></tr>
+                      ) : (
+                        employees.map((emp) => {
+                          const limitDate = new Date(emp.deadlineStart);
+                          const status = getStatus(limitDate);
                           return (
-                            <div key={i} className="whitespace-nowrap py-0.5">
-                              {new Date(p.start + 'T12:00:00Z').toLocaleDateString('pt-BR')} até {new Date(p.end + 'T12:00:00Z').toLocaleDateString('pt-BR')} <span className="font-semibold text-violet-700">({days}d)</span>
-                            </div>
+                            <tr key={emp.id} className="hover:bg-gray-50 transition-colors">
+                              <td className="py-3 px-4">
+                                <div className="font-medium text-gray-900">{emp.name}</div>
+                                <div className="text-xs text-gray-500 flex items-center gap-1 mt-0.5">
+                                  <span>{emp.role}</span><span className="w-1 h-1 bg-gray-300 rounded-full"></span>
+                                  <span className={`font-medium ${emp.department === 'Comercial' ? 'text-blue-600' : 'text-orange-600'}`}>{emp.department || 'Operacional'}</span>
+                                </div>
+                              </td>
+                              <td className="py-3 px-4 text-gray-600">{new Date(emp.admissionDate + 'T12:00:00Z').toLocaleDateString('pt-BR')}</td>
+                              <td className="py-3 px-4 font-medium text-gray-800">{limitDate.toLocaleDateString('pt-BR')}</td>
+                              <td className="py-3 px-4">
+                                <span className={`inline-flex items-center px-2 py-1 rounded-full text-xs font-medium ${status.bg} ${status.color}`}>
+                                  <Icon name={status.iconName} className="w-3 h-3 mr-1" />{status.label}
+                                </span>
+                              </td>
+                              <td className="py-3 px-4">
+                                <div className="flex items-center space-x-3">
+                                  <button onClick={() => handleEdit(emp)} className="text-gray-400 hover:text-blue-600 transition-colors" title="Editar"><Icon name="Edit2" className="w-4 h-4" /></button>
+                                  <button onClick={() => removeEmployee(emp.id)} className="text-gray-400 hover:text-red-600 transition-colors" title="Remover"><Icon name="Trash2" className="w-4 h-4" /></button>
+                                </div>
+                              </td>
+                            </tr>
                           );
-                        });
-                      })()}
-                    </td>
-                    {months.map((_, index) => {
-                      const isVacation = checkOverlap(index, emp.plannedPeriods, emp.plannedStart, emp.plannedEnd);
-                      return (
-                        <td key={index} className="p-1 border border-gray-200 relative">
-                          {isVacation && (
-                            <div className="absolute inset-1 bg-violet-400/80 border border-violet-500 rounded-sm shadow-sm" title="Férias Programadas"></div>
-                          )}
-                        </td>
-                      );
-                    })}
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        </div>
+                        })
+                      )}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            </div>
 
-      </main>
-    </div>
-  );
-}
+            <div className="bg-white p-6 rounded-xl shadow-sm border border-gray-100">
+              <div className="flex flex-col md:flex-row justify-between items-start md:items-center mb-6">
+                <div>
+                  <h2 className="text-lg font-bold text-gray-800 flex items-center">
+                    <Icon name="CalendarDays" className="w-5 h-5 mr-2 text-violet-500" /> Cronograma de Férias
+                  </h2>
+                </div>
+                <button onClick={exportPPTX} disabled={!isPptxLoaded} className={`mt-4 md:mt-0 flex items-center px-4 py-2 bg-gray-900 hover:bg-gray-800 text-white text-sm font-medium rounded-md transition-colors ${!isPptxLoaded ? 'opacity-50 cursor-not-allowed' : ''}`}>
+                  <Icon name="Download" className="w-4 h-4 mr-2" /> Gerar Relatório Diretoria 2 (PPTX)
+                </button>
+              </div>
+              <div className="overflow-x-auto">
+                <table className="w-full min-w-[800px] border-collapse">
+                  <thead>
+                    <tr>
+                      <th className="p-2 border border-gray-200 bg-gray-50 text-left text-xs font-medium text-gray-500 uppercase w-48">Colaborador</th>
+                      <th className="p-2 border border-gray-200 bg-gray-50 text-left text-xs font-medium text-gray-500 uppercase w-56">Períodos (Qtd. Dias)</th>
+                      {months.map(month => <th key={month} className="p-2 border border-gray-200 bg-gray-50 text-center text-xs font-medium text-gray-500 uppercase">{month}</th>)}
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {employees.map(emp => (
+                      <tr key={emp.id}>
+                        <td className="p-2 border border-gray-200 text-sm font-medium text-gray-800">
+                          {emp.name}
+                          <div className="text-[10px] text-gray-500 font-normal truncate max-w-[180px]">{emp.role} • <span className={emp.department === 'Comercial' ? 'text-blue-600' : 'text-orange-600'}>{emp.department || 'Operacional'}</span></div>
+                        </td>
+                        <td className="p-2 border border-gray-200 text-xs text-gray-600 bg-gray-50/50">
+                          {(() => {
+                            const periods = emp.plannedPeriods || (emp.plannedStart ? [{start: emp.plannedStart, end: emp.plannedEnd}] : []);
+                            const validPeriods = periods.filter(p => p.start && p.end);
+                            if (validPeriods.length === 0) return <span className="text-gray-400 italic">Não agendado</span>;
+                            return validPeriods.map((p, i) => {
+                              const days = calculateDays(p.start, p.end);
+                              return (
+                                <div key={i} className="whitespace-nowrap py-0.5">
+                                  {new Date(p.start + 'T12:00:00Z').toLocaleDateString('pt-BR')} até {new Date(p.end + 'T12:00:00Z').toLocaleDateString('pt-BR')} <span className="font-semibold text-violet-700">({days}d)</span>
+                                </div>
+                              );
+                            });
+                          })()}
+                        </td>
+                        {months.map((_, index) => {
+                          const isVacation = checkOverlap(index, emp.plannedPeriods, emp.plannedStart, emp.plannedEnd);
+                          return (
+                            <td key={index} className="p-1 border border-gray-200 relative">
+                              {isVacation && <div className="absolute inset-1 bg-violet-400/80 border border-violet-500 rounded-sm shadow-sm" title="Férias Programadas"></div>}
+                            </td>
+                          );
+                        })}
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          </main>
+        </div>
+      );
+    }
+
+    const root = ReactDOM.createRoot(document.getElementById('root'));
+    root.render(<App />);
+  </script>
+</body>
+</html>
