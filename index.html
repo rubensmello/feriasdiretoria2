@@ -92,7 +92,17 @@
         // Load saved data
         const saved = localStorage.getItem('besmart_vacations');
         if (saved) {
-          setEmployees(JSON.parse(saved));
+          try {
+            const parsedData = JSON.parse(saved);
+            // Garante que todos os cadastros (inclusive os antigos) tenham um ID único
+            const validData = parsedData.map(emp => ({
+              ...emp,
+              id: emp.id || Date.now().toString(36) + Math.random().toString(36).substring(2)
+            }));
+            setEmployees(validData);
+          } catch (e) {
+            console.error("Erro ao carregar dados salvos:", e);
+          }
         }
       }, []);
 
@@ -192,9 +202,13 @@
           formData.hasTakenVacation ? formData.lastVacationEnd : null
         );
 
+        // Gera um ID seguro compatível com qualquer servidor ou acesso local
+        const safeId = Date.now().toString(36) + Math.random().toString(36).substring(2);
+
+        // CORREÇÃO: ...formData deve vir PRIMEIRO para não sobrescrever o ID gerado
         const employeeData = {
-          ...(formData.id ? { id: formData.id } : { id: crypto.randomUUID() }),
           ...formData,
+          id: formData.id ? formData.id : safeId,
           deadlineStart: startDeadline.toISOString(),
           deadlineFinish: finishDeadline.toISOString()
         };
